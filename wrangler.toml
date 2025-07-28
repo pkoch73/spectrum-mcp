@@ -6,8 +6,8 @@ compatibility_flags = ["nodejs_compat"]
 [vars]
 ENVIRONMENT = "production"
 
-# KV namespace for caching (optional)
-# [[kv_namespaces]]
-# binding = "SPECTRUM_CACHE"
-# id = "your-actual-namespace-id"
-# preview_id = "your-actual-preview-id"
+# KV namespace for caching
+[[kv_namespaces]]
+binding = "SPECTRUM_CACHE"
+id = "c5f2824b87cd4081bba0a8daa18edadb"
+preview_id = "c5f2824b87cd4081bba0a8daa18edadb"
