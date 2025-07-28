@@ -5,4 +5,4 @@ dist/
 .wrangler/
 *.log
 .DS_Store
-TEST_RESULTS.md
+CLEANUP_SUMMARY.md
