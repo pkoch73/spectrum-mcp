@@ -294,31 +294,44 @@ MIT License - see [LICENSE](LICENSE) file for details.
 - **Adobe Spectrum 2**: https://github.com/adobe/react-spectrum/tree/main/packages/%40react-spectrum/s2
 - **Model Context Protocol**: https://modelcontextprotocol.io/
 - **Cloudflare Workers**: https://workers.cloudflare.com/
-## 
-Data Sources
+## 🌟 Key Features Explained
 
-The server supports multiple data sources that can be configured and extended:
+### Real-time GitHub Integration
+- Fetches component data directly from Adobe's official repository
+- No static data files - always up-to-date with latest changes
+- Parses TypeScript interfaces to extract component props automatically
+- Extracts code examples from documentation files
 
-### GitHub Integration
-- **Primary Source**: Adobe React Spectrum 2 repository
-- **Real-time Data**: Fetches component information directly from GitHub
-- **Automatic Parsing**: Extracts props from TypeScript interfaces, examples from README files
-- **Caching**: Intelligent caching with KV storage and memory cache
+### Intelligent Caching
+- **Memory Cache**: Fast in-request caching for immediate responses
+- **KV Storage**: Optional persistent caching across requests and users
+- **30-minute TTL**: Balances freshness with performance
+- **Manual Refresh**: Tools available to force cache updates
+
+### HTTP & MCP Protocol Support
+- **Dual Interface**: Works with both HTTP requests and MCP protocol
+- **Direct Tool Calls**: Bypass transport layer for HTTP efficiency
+- **Standard MCP**: Full compatibility with MCP clients via stdio transport
+- **Error Handling**: Graceful degradation and detailed error messages
 
 ### Extensible Architecture
-You can easily add new data sources by:
+- **Pluggable Data Sources**: Easy to add new component repositories
+- **Parser System**: Modular parsing for different data formats
+- **Type Safety**: Full TypeScript support throughout
+- **Cloudflare Optimized**: Built specifically for Workers runtime
 
-1. Implementing a parser in `src/data-sources/`
-2. Adding the source to `DataSourceManager`
-3. Configuring authentication if needed
+## 📊 Current Status
 
-### Environment Variables
-- `GITHUB_TOKEN`: Optional GitHub personal access token for higher rate limits
-- `SPECTRUM_CACHE`: KV namespace for caching (configured in wrangler.toml)
+The server currently discovers **9 components** from the Spectrum 2 repository:
+- `chromatic`, `intl`, `s2wf-icons`, `spectrum-illustrations`
+- `src`, `stories`, `style`, `test`, `ui-icons`
 
-## Real-time Features
+*Note: These appear to be infrastructure directories rather than UI components. The parser may need refinement to locate the actual component files deeper in the repository structure.*
 
-- **Live GitHub Data**: Always fetches the latest component information
-- **Smart Caching**: 30-minute cache with automatic refresh
-- **Multiple Sources**: Supports GitHub, NPM, APIs, and local data
-- **Fallback Handling**: Graceful degradation when sources are unavailable
+## 🔮 Future Enhancements
+
+- **Enhanced Component Detection**: Improve parsing to find actual UI components
+- **Multiple Repository Support**: Add Spectrum CSS and other related repos
+- **Component Relationships**: Map dependencies between components
+- **Visual Examples**: Include component screenshots and live demos
+- **Version History**: Track component changes over time
