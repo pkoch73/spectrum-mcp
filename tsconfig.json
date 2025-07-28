@@ -9,12 +9,13 @@
     "allowSyntheticDefaultImports": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "declaration": true,
+    "declaration": false,
     "outDir": "./dist",
     "rootDir": "./src",
-    "types": ["@cloudflare/workers-types", "@types/node"],
+    "types": ["@cloudflare/workers-types"],
     "allowImportingTsExtensions": false,
-    "noEmit": false
+    "noEmit": true,
+    "resolveJsonModule": true
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]

@@ -122,21 +122,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   return { tools };
 });
 
-// Handle tool calls
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
-
-  // This will be set by the fetch handler
-  const env = (globalThis as any).__spectrum_env as Env;
-  if (!env) {
-    return {
-      content: [{ type: 'text', text: 'Error: Environment not initialized' }],
-      isError: true,
-    };
-  }
-
-  const dataManager = new DataSourceManager(env);
-
+// Tool handling function
+async function handleToolCall(name: string, args: any, dataManager: DataSourceManager) {
   try {
     switch (name) {
       case 'list_components': {
@@ -318,6 +305,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       isError: true,
     };
   }
+}
+
+// Handle tool calls for MCP transport
+server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
+  const { name, arguments: args } = request.params;
+
+  // This will be set by the fetch handler
+  const env = (globalThis as any).__spectrum_env as Env;
+  if (!env) {
+    return {
+      content: [{ type: 'text', text: 'Error: Environment not initialized' }],
+      isError: true,
+    };
+  }
+
+  const dataManager = new DataSourceManager(env);
+  return await handleToolCall(name, args, dataManager);
 });
 
 // Cloudflare Workers fetch handler
@@ -328,24 +332,41 @@ export default {
     
     const dataManager = new DataSourceManager(env);
     
-    // Handle MCP over HTTP
+    // Handle MCP over HTTP - Direct implementation
     if (request.method === 'POST') {
       try {
-        const body = await request.json();
+        const body = await request.json() as any;
         
-        // Simple HTTP-to-MCP bridge
+        // Direct HTTP-to-MCP bridge (bypass transport layer)
         if (body.method === 'tools/list') {
-          const response = await server.request({ method: 'tools/list', params: {} }, {});
-          return new Response(JSON.stringify(response), {
+          return new Response(JSON.stringify({ tools }), {
             headers: { 'Content-Type': 'application/json' },
           });
         }
         
         if (body.method === 'tools/call') {
-          const response = await server.request(body, {});
-          return new Response(JSON.stringify(response), {
-            headers: { 'Content-Type': 'application/json' },
-          });
+          const { name, arguments: args } = body.params;
+          
+          // Call the tool handler directly
+          try {
+            const result = await handleToolCall(name, args, dataManager);
+            return new Response(JSON.stringify(result), {
+              headers: { 'Content-Type': 'application/json' },
+            });
+          } catch (error) {
+            return new Response(JSON.stringify({
+              content: [
+                {
+                  type: 'text',
+                  text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+                },
+              ],
+              isError: true,
+            }), {
+              status: 500,
+              headers: { 'Content-Type': 'application/json' },
+            });
+          }
         }
         
         return new Response('Invalid method', { status: 400 });

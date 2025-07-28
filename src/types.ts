@@ -41,7 +41,7 @@ export interface DataSource {
   name: string;
   type: 'github' | 'npm' | 'api' | 'local';
   config: Record<string, any>;
-  parser: (data: any) => SpectrumComponent[];
+  parser: (data: any) => Promise<SpectrumComponent[]>;
 }
 
 export interface GitHubConfig {

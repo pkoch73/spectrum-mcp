@@ -2,44 +2,33 @@
 
 echo "🚀 Deploying Spectrum 2 MCP Server to Cloudflare Workers"
 
-# Check if wrangler is installed
-if ! command -v wrangler &> /dev/null; then
-    echo "❌ Wrangler CLI not found. Installing..."
-    npm install -g wrangler
-fi
-
-# Check if user is logged in
-echo "🔐 Checking Cloudflare authentication..."
-if ! wrangler whoami &> /dev/null; then
-    echo "❌ Not logged in to Cloudflare. Please run:"
-    echo "   wrangler login"
-    exit 1
-fi
-
 # Install dependencies
 echo "📦 Installing dependencies..."
 npm install
 
-# Create KV namespace if it doesn't exist
-echo "🗄️  Setting up KV namespace..."
-KV_OUTPUT=$(wrangler kv:namespace create "SPECTRUM_CACHE" 2>/dev/null || echo "exists")
-
-if [[ $KV_OUTPUT != "exists" ]]; then
-    echo "✅ KV namespace created. Please update wrangler.toml with the namespace ID:"
-    echo "$KV_OUTPUT"
-    echo ""
-    echo "Update the 'id' field in wrangler.toml under [[kv_namespaces]]"
-    echo "Then run this script again."
+# Check if user is logged in
+echo "🔐 Checking Cloudflare authentication..."
+if ! npx wrangler whoami &> /dev/null; then
+    echo "❌ Not logged in to Cloudflare. Please run:"
+    echo "   npx wrangler login"
     exit 1
 fi
 
-# Build the project
-echo "🔨 Building project..."
-npm run build
+# Create KV namespace if needed
+echo "🗄️  Setting up KV namespace..."
+echo "Creating KV namespace (ignore error if it already exists)..."
+npx wrangler kv:namespace create "SPECTRUM_CACHE" || true
+
+echo ""
+echo "⚠️  IMPORTANT: Update wrangler.toml with your KV namespace IDs"
+echo "   Run: npx wrangler kv:namespace list"
+echo "   Then update the 'id' and 'preview_id' fields in wrangler.toml"
+echo ""
+read -p "Press Enter after updating wrangler.toml with your KV namespace IDs..."
 
 # Deploy to Cloudflare Workers
 echo "🚀 Deploying to Cloudflare Workers..."
-wrangler deploy
+npx wrangler deploy
 
 echo "✅ Deployment complete!"
 echo ""
