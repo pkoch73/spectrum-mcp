@@ -11,8 +11,8 @@ export class GitHubSpectrumParser {
 
   async fetchComponents(): Promise<SpectrumComponent[]> {
     try {
-      // Get the directory structure of the Spectrum 2 components
-      const componentsPath = `${this.config.path}`;
+      // Get the src directory where actual components are located
+      const componentsPath = `${this.config.path}/src`;
       const response = await this.fetchGitHubAPI(`/contents/${componentsPath}`);
       
       if (!Array.isArray(response)) {
@@ -21,11 +21,12 @@ export class GitHubSpectrumParser {
 
       const components: SpectrumComponent[] = [];
       
-      // Process each component directory
+      // Process each component file
       for (const item of response) {
-        if (item.type === 'dir') {
+        if (item.type === 'file' && (item.name.endsWith('.tsx') || item.name.endsWith('.ts'))) {
           try {
-            const component = await this.parseComponent(item.name, item.path);
+            const componentName = item.name.replace(/\.(tsx?|jsx?)$/, '');
+            const component = await this.parseComponentFile(componentName, item.download_url);
             if (component) {
               components.push(component);
             }
@@ -42,65 +43,19 @@ export class GitHubSpectrumParser {
     }
   }
 
-  private async parseComponent(componentName: string, componentPath: string): Promise<SpectrumComponent | null> {
+  private async parseComponentFile(componentName: string, downloadUrl: string): Promise<SpectrumComponent | null> {
     try {
-      // Fetch component files
-      const files = await this.fetchGitHubAPI(`/contents/${componentPath}`);
-      if (!Array.isArray(files)) return null;
-
-      // Look for key files
-      const srcFile = files.find(f => f.name === 'src' && f.type === 'dir');
-      const packageFile = files.find(f => f.name === 'package.json');
-      const readmeFile = files.find(f => f.name.toLowerCase().includes('readme'));
-
-      let description = `${componentName} component from Adobe Spectrum 2`;
-      let props: ComponentProp[] = [];
-      let examples: ComponentExample[] = [];
-
-      // Parse package.json for description
-      if (packageFile) {
-        try {
-          const packageData = await this.fetchFileContent(packageFile.download_url);
-          const pkg = JSON.parse(packageData);
-          if (pkg.description) {
-            description = pkg.description;
-          }
-        } catch (e) {
-          console.warn(`Failed to parse package.json for ${componentName}`);
-        }
-      }
-
-      // Parse README for examples and documentation
-      if (readmeFile) {
-        try {
-          const readmeContent = await this.fetchFileContent(readmeFile.download_url);
-          examples = this.extractExamplesFromReadme(readmeContent);
-        } catch (e) {
-          console.warn(`Failed to parse README for ${componentName}`);
-        }
-      }
-
-      // Parse TypeScript files for props
-      if (srcFile) {
-        try {
-          const srcFiles = await this.fetchGitHubAPI(`/contents/${srcFile.path}`);
-          if (Array.isArray(srcFiles)) {
-            for (const file of srcFiles) {
-              if (file.name.endsWith('.tsx') || file.name.endsWith('.ts')) {
-                try {
-                  const content = await this.fetchFileContent(file.download_url);
-                  const extractedProps = this.extractPropsFromTypeScript(content);
-                  props.push(...extractedProps);
-                } catch (e) {
-                  console.warn(`Failed to parse ${file.name} for ${componentName}`);
-                }
-              }
-            }
-          }
-        } catch (e) {
-          console.warn(`Failed to parse src directory for ${componentName}`);
-        }
-      }
+      // Fetch the component file content
+      const content = await this.fetchFileContent(downloadUrl);
+      
+      // Extract props from TypeScript interfaces
+      const props = this.extractPropsFromTypeScript(content);
+      
+      // Extract examples from JSDoc comments or inline examples
+      const examples = this.extractExamplesFromCode(content, componentName);
+      
+      // Extract description from JSDoc or comments
+      const description = this.extractDescriptionFromCode(content, componentName);
 
       return {
         name: componentName,
@@ -110,13 +65,13 @@ export class GitHubSpectrumParser {
         examples,
         accessibility: {
           ariaLabels: this.extractAriaLabels(props),
-          keyboardSupport: [],
+          keyboardSupport: this.extractKeyboardSupport(content),
           screenReaderSupport: "Standard screen reader support"
         },
-        designTokens: []
+        designTokens: this.extractDesignTokens(content)
       };
     } catch (error) {
-      console.error(`Error parsing component ${componentName}:`, error);
+      console.error(`Error parsing component file ${componentName}:`, error);
       return null;
     }
   }
@@ -152,41 +107,94 @@ export class GitHubSpectrumParser {
   private extractPropsFromTypeScript(content: string): ComponentProp[] {
     const props: ComponentProp[] = [];
     
-    // Look for interface definitions
-    const interfaceRegex = /interface\s+(\w+Props)\s*{([^}]+)}/g;
+    // Look for interface definitions (Props interfaces)
+    const interfaceRegex = /interface\s+(\w*Props?)\s*(?:extends\s+[\w<>,\s]+)?\s*{([^}]+)}/gs;
     let match;
     
     while ((match = interfaceRegex.exec(content)) !== null) {
+      const interfaceName = match[1];
       const interfaceBody = match[2];
-      const propRegex = /(\w+)(\?)?:\s*([^;]+);/g;
-      let propMatch;
       
-      while ((propMatch = propRegex.exec(interfaceBody)) !== null) {
-        const [, name, optional, type] = propMatch;
-        
-        // Extract JSDoc comments if present
-        const lines = interfaceBody.split('\n');
-        const propLineIndex = lines.findIndex(line => line.includes(`${name}:`));
-        let description = `${name} property`;
-        
-        if (propLineIndex > 0) {
-          const prevLine = lines[propLineIndex - 1]?.trim();
-          if (prevLine?.startsWith('*') || prevLine?.startsWith('//')) {
-            description = prevLine.replace(/^\*\s*/, '').replace(/^\/\/\s*/, '');
-          }
-        }
+      // Skip if this doesn't look like a props interface
+      if (!interfaceName.toLowerCase().includes('prop')) continue;
+      
+      this.extractPropsFromInterfaceBody(interfaceBody, props);
+    }
 
-        props.push({
-          name,
-          type: type.trim(),
-          required: !optional,
-          description,
-          options: this.extractTypeOptions(type.trim())
-        });
-      }
+    // Also look for type definitions
+    const typeRegex = /type\s+(\w*Props?)\s*=\s*{([^}]+)}/gs;
+    while ((match = typeRegex.exec(content)) !== null) {
+      const typeName = match[1];
+      const typeBody = match[2];
+      
+      if (!typeName.toLowerCase().includes('prop')) continue;
+      
+      this.extractPropsFromInterfaceBody(typeBody, props);
+    }
+
+    // Look for function component props in function signatures
+    const functionRegex = /function\s+\w+\s*\(\s*(?:props\s*:\s*)?{([^}]+)}\s*\)/gs;
+    while ((match = functionRegex.exec(content)) !== null) {
+      this.extractPropsFromInterfaceBody(match[1], props);
     }
 
     return props;
+  }
+
+  private extractPropsFromInterfaceBody(interfaceBody: string, props: ComponentProp[]): void {
+    // Handle multi-line prop definitions with JSDoc comments
+    const lines = interfaceBody.split('\n').map(line => line.trim());
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      
+      // Skip empty lines and comments
+      if (!line || line.startsWith('//') || line.startsWith('*')) continue;
+      
+      // Match prop definition: propName?: type;
+      const propMatch = line.match(/^(\w+)(\?)?:\s*([^;,]+)[;,]?$/);
+      if (!propMatch) continue;
+      
+      const [, name, optional, type] = propMatch;
+      
+      // Look for JSDoc comment above this prop
+      let description = `${name} property`;
+      for (let j = i - 1; j >= 0; j--) {
+        const prevLine = lines[j];
+        if (!prevLine) break;
+        
+        if (prevLine.startsWith('*') && !prevLine.startsWith('*/')) {
+          description = prevLine.replace(/^\*\s*/, '').trim();
+          break;
+        } else if (prevLine.startsWith('//')) {
+          description = prevLine.replace(/^\/\/\s*/, '').trim();
+          break;
+        } else if (prevLine.includes('*/')) {
+          break;
+        }
+      }
+
+      const cleanType = type.trim();
+      props.push({
+        name,
+        type: cleanType,
+        required: !optional,
+        description,
+        options: this.extractTypeOptions(cleanType),
+        defaultValue: this.extractDefaultValue(cleanType)
+      });
+    }
+  }
+
+  private extractDefaultValue(type: string): string | undefined {
+    // Look for default values in union types or comments
+    if (type.includes('=')) {
+      const defaultMatch = type.match(/=\s*([^|,\s]+)/);
+      if (defaultMatch) {
+        return defaultMatch[1].replace(/['"]/g, '');
+      }
+    }
+    return undefined;
   }
 
   private extractTypeOptions(type: string): string[] | undefined {
@@ -198,27 +206,132 @@ export class GitHubSpectrumParser {
     return undefined;
   }
 
-  private extractExamplesFromReadme(content: string): ComponentExample[] {
+  private extractExamplesFromCode(content: string, componentName: string): ComponentExample[] {
     const examples: ComponentExample[] = [];
     
-    // Look for code blocks in markdown
-    const codeBlockRegex = /```(?:tsx?|jsx?|javascript|typescript)?\n([\s\S]*?)\n```/g;
+    // Look for JSDoc examples
+    const jsdocExampleRegex = /@example\s*\n\s*\*\s*([\s\S]*?)(?=\*\/|\*\s*@)/g;
     let match;
     let exampleIndex = 1;
     
-    while ((match = codeBlockRegex.exec(content)) !== null) {
-      const code = match[1].trim();
-      if (code.includes('<') && code.includes('>')) { // Likely JSX/TSX
+    while ((match = jsdocExampleRegex.exec(content)) !== null) {
+      const code = match[1]
+        .split('\n')
+        .map(line => line.replace(/^\s*\*\s?/, ''))
+        .join('\n')
+        .trim();
+      
+      if (code.includes('<') && code.includes(componentName)) {
         examples.push({
           title: `Example ${exampleIndex}`,
-          description: `Usage example from documentation`,
+          description: `Usage example from JSDoc`,
           code
         });
         exampleIndex++;
       }
     }
 
+    // Look for inline examples in comments
+    const inlineExampleRegex = /\/\*\*[\s\S]*?Example:?\s*\n([\s\S]*?)\*\//g;
+    while ((match = inlineExampleRegex.exec(content)) !== null) {
+      const code = match[1]
+        .split('\n')
+        .map(line => line.replace(/^\s*\*\s?/, ''))
+        .join('\n')
+        .trim();
+      
+      if (code.includes('<') && code.includes(componentName)) {
+        examples.push({
+          title: `Inline Example ${exampleIndex}`,
+          description: `Usage example from inline documentation`,
+          code
+        });
+        exampleIndex++;
+      }
+    }
+
+    // Generate basic example if none found
+    if (examples.length === 0) {
+      examples.push({
+        title: 'Basic Usage',
+        description: `Basic ${componentName} usage`,
+        code: `<${componentName}>${componentName === 'Button' ? 'Click me' : 'Content'}</${componentName}>`
+      });
+    }
+
     return examples;
+  }
+
+  private extractDescriptionFromCode(content: string, componentName: string): string {
+    // Look for JSDoc description at the top of the file or before the main export
+    const jsdocRegex = /\/\*\*\s*\n\s*\*\s*(.*?)(?:\n\s*\*\s*@|\n\s*\*\/)/;
+    const match = jsdocRegex.exec(content);
+    
+    if (match && match[1]) {
+      return match[1].trim();
+    }
+
+    // Look for component description in comments
+    const componentRegex = new RegExp(`\/\*\*[\\s\\S]*?${componentName}[\\s\\S]*?\*\/`);
+    const componentMatch = componentRegex.exec(content);
+    
+    if (componentMatch) {
+      const description = componentMatch[0]
+        .replace(/\/\*\*|\*\//g, '')
+        .split('\n')
+        .map(line => line.replace(/^\s*\*\s?/, ''))
+        .join(' ')
+        .trim();
+      
+      if (description.length > 10) {
+        return description;
+      }
+    }
+
+    return `${componentName} component from Adobe Spectrum 2`;
+  }
+
+  private extractKeyboardSupport(content: string): string[] {
+    const keyboardSupport: string[] = [];
+    
+    // Look for keyboard event handlers
+    if (content.includes('onKeyDown') || content.includes('onKeyUp')) {
+      keyboardSupport.push('Enter', 'Space');
+    }
+    
+    if (content.includes('ArrowUp') || content.includes('ArrowDown')) {
+      keyboardSupport.push('Arrow keys');
+    }
+    
+    if (content.includes('Escape')) {
+      keyboardSupport.push('Escape');
+    }
+    
+    if (content.includes('Tab')) {
+      keyboardSupport.push('Tab');
+    }
+
+    return keyboardSupport.length > 0 ? keyboardSupport : ['Tab', 'Enter'];
+  }
+
+  private extractDesignTokens(content: string): any[] {
+    const tokens: any[] = [];
+    
+    // Look for CSS custom properties or design token references
+    const tokenRegex = /--spectrum-[\w-]+/g;
+    const matches = content.match(tokenRegex);
+    
+    if (matches) {
+      const uniqueTokens = [...new Set(matches)];
+      tokens.push(...uniqueTokens.map(token => ({
+        name: token,
+        value: `var(${token})`,
+        category: 'color',
+        description: `Design token for ${token.replace('--spectrum-', '').replace(/-/g, ' ')}`
+      })));
+    }
+
+    return tokens;
   }
 
   private extractAriaLabels(props: ComponentProp[]): string[] {
@@ -241,11 +354,37 @@ export class GitHubSpectrumParser {
   private inferCategory(componentName: string): string {
     const name = componentName.toLowerCase();
     
+    // Actions
     if (name.includes('button') || name.includes('action')) return 'Actions';
-    if (name.includes('text') || name.includes('input') || name.includes('form')) return 'Forms';
-    if (name.includes('nav') || name.includes('link') || name.includes('breadcrumb')) return 'Navigation';
-    if (name.includes('dialog') || name.includes('modal') || name.includes('popover')) return 'Overlays';
-    if (name.includes('flex') || name.includes('grid') || name.includes('layout')) return 'Layout';
+    
+    // Forms
+    if (name.includes('textfield') || name.includes('textarea') || name.includes('input') || 
+        name.includes('checkbox') || name.includes('radio') || name.includes('select') ||
+        name.includes('slider') || name.includes('switch') || name.includes('form')) return 'Forms';
+    
+    // Navigation
+    if (name.includes('nav') || name.includes('link') || name.includes('breadcrumb') ||
+        name.includes('tabs') || name.includes('menu')) return 'Navigation';
+    
+    // Overlays
+    if (name.includes('dialog') || name.includes('modal') || name.includes('popover') ||
+        name.includes('tooltip') || name.includes('alert')) return 'Overlays';
+    
+    // Layout
+    if (name.includes('flex') || name.includes('grid') || name.includes('layout') ||
+        name.includes('divider') || name.includes('header') || name.includes('footer')) return 'Layout';
+    
+    // Content
+    if (name.includes('text') || name.includes('heading') || name.includes('image') ||
+        name.includes('avatar') || name.includes('badge') || name.includes('tag')) return 'Content';
+    
+    // Collections
+    if (name.includes('list') || name.includes('table') || name.includes('tree') ||
+        name.includes('accordion') || name.includes('card')) return 'Collections';
+    
+    // Status
+    if (name.includes('progress') || name.includes('meter') || name.includes('status') ||
+        name.includes('indicator')) return 'Status';
     
     return 'Components';
   }
