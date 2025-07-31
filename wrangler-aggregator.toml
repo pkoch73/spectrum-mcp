@@ -1,0 +1,6 @@
+name = "spectrum2-mcp-aggregator"
+main = "src/main-aggregator.ts"
+compatibility_date = "2024-01-01"
+
+[env.production]
+name = "spectrum2-mcp-aggregator"

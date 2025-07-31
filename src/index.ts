@@ -310,10 +310,13 @@ async function handleToolCall(name: string, args: any, dataManager: DataSourceMa
 // Handle tool calls for MCP transport
 server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
   const { name, arguments: args } = request.params;
+  
+  console.error(`=== MCP TOOL CALL: ${name} with args:`, JSON.stringify(args));
 
   // This will be set by the fetch handler
   const env = (globalThis as any).__spectrum_env as Env;
   if (!env) {
+    console.error('ERROR: Environment not initialized');
     return {
       content: [{ type: 'text', text: 'Error: Environment not initialized' }],
       isError: true,
@@ -321,7 +324,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
   }
 
   const dataManager = new DataSourceManager(env);
-  return await handleToolCall(name, args, dataManager);
+  const result = await handleToolCall(name, args, dataManager);
+  console.error(`=== MCP TOOL CALL COMPLETE: ${name}`);
+  return result;
 });
 
 // Cloudflare Workers fetch handler

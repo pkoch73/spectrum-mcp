@@ -1,10 +1,11 @@
-name = "spectrum2-mcp-server"
-main = "src/index.ts"
+name = "spectrum2-mcp-worker-2"
+main = "src/worker-2.ts"
 compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
 
 [vars]
 ENVIRONMENT = "production"
+WORKER_TYPE = "WORKER_2"
 
 # Enable logging
 [observability]
